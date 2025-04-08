@@ -1,119 +1,236 @@
 import axios from 'axios';
+import { CookieJar } from 'tough-cookie';
+import { wrapper } from 'axios-cookiejar-support';
+import * as cheerio from 'cheerio';
+import {encrypt} from './Encryptor.js';       // your port of the Python Encryptor
 
-export default class Outlook {
-    constructor() {
-        // Базовый URL для всех запросов
-        axios.defaults.baseURL = 'https://signup.live.com';
+function decodeUrl(encodedString) {
+    return encodedString.replace(
+        /\\u([0-9A-Fa-f]{4})/g,
+        (_, hex) => String.fromCharCode(parseInt(hex, 16))
+    );
+}
+export default class OutlookGenerator {
+    constructor({ proxy = null } = {}) {
+        // Create an axios instance with cookie jar support
+        this.jar = new CookieJar();
+        this.client = wrapper(axios.create({
+            baseURL: 'https://signup.live.com',
+            jar: this.jar,
+            withCredentials: true,
+            proxy: proxy ? {
+                protocol: 'http',
+                host: proxy.host,
+                port: proxy.port
+            } : false,
+            headers: {
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Connection': 'keep-alive',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ' +
+                    'AppleWebKit/537.36 (KHTML, like Gecko) ' +
+                    'Chrome/125.0.0.0 Safari/537.36',
+            }
+        }));
+    }
 
-        // Общие заголовки для всех запросов
-        axios.defaults.headers.common = {
-            'Accept': 'application/json, text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-            'Accept-Language': 'ru-RU,ru;q=0.9',
-            'Connection': 'keep-alive',
-            'Content-Type': 'application/json; charset=utf-8',
-            'Origin': 'https://signup.live.com',
-            'Referer': 'https://signup.live.com/?lic=1',
-            'Sec-Fetch-Dest': 'document',
-            'Sec-Fetch-Mode': 'navigate',
-            'Sec-Fetch-Site': 'none',
-            'Sec-Fetch-User': '?1',
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) ' +
-                'AppleWebKit/537.36 (KHTML, like Gecko) ' +
-                'Chrome/135.0.0.0 Safari/537.36',
-            'sec-ch-ua': '"Google Chrome";v="135", "Not-A.Brand";v="8", "Chromium";v="135"',
-            'sec-ch-ua-mobile': '?0',
-            'sec-ch-ua-platform': '"macOS"',
-            // кастомные для CreateAccount
-            'canary': '51BOOh7RcTfno2ZBh0ufgiNZcz9UinPxFh/JpIMZ45uZi2fnOBMmbc6Dwyh85cvddLB7BzzHMkJt4ZIkoarqBN/nvcaHD8ObELwl+flIlc+/H+X4EZMM0fCChMNjrI8HyNi64sEWwJSRQ61Qn8EF52GGpOnAUeBAg7vkTsXBFrnz+7Iao563Swfhz5D5hN6o0iIjGMGyutn6TTEoEu4wo5Cyz1rVjoSS+QGF5zSbYWmERGyJmudK6GvfW9c3CJci:2:3c',
-            'client-request-id': '8b8f34a5e5274b1b857d8997b51a50bf',
-            'correlationId': '8b8f34a5e5274b1b857d8997b51a50bf',
-            'hpgact': '0',
+    _randStr(len = 12) {
+        return [...Array(len)].map(() =>
+            String.fromCharCode(97 + Math.floor(Math.random() * 26))
+        ).join('');
+    }
+
+    async _initialGet() {
+        // Step 1: GET signup landing page
+        const res1 = await this.client.get('/signup');
+        const $ = cheerio.load(res1.data);
+        // find first <a href=...>
+        const href = $('a').first().attr('href');
+        if (!href) throw new Error('Could not find signup link');
+
+        return href;
+    }
+
+    async _getUaId() {
+        // Step 2: GET login.live.com → redirect back to signup.live.com with uaid
+        // The cookie jar will keep all cookies automatically.
+        // now fetch the real signup with lic=1
+        const res3 = await this.client.get(`/signup?lic=1`);
+        const html = res3.data;
+        // extract apiCanary, sHipFid, SKI, hpgid, iUiFlavor, iScenarioId
+        const fields = {};
+        for (const key of ['apiCanary','sHipFid','hpgid','iUiFlavor','iScenarioId', 'urlDfp', 'sUnauthSessionID']) {
+            const re = new RegExp(`"${key}"\\s*[:=]\\s*"?([^",\\s}]+)"?`);
+            const m = html.match(re);
+            if (m) fields[key] = isNaN(m[1]) ? m[1] : Number(m[1]);
+        }
+        return fields;
+    }
+
+    async _fptFlow(url) {
+        // Step 3: call fpt.live.com → extract txnId, ticks, rid, authKey, cid
+        const res = await this.client.get(url, {
+            headers: { Referer: 'https://signup.live.com' }
+        });
+        const $ = cheerio.load(res.data);
+        let scriptText = '';
+        $('script').each((i, s) => {
+            const t = $(s).html();
+            if (t && t.includes('txnId')) scriptText = t;
+        });
+        if (!scriptText) throw new Error('fpt script block not found');
+
+        const extract = (k) => {
+            const m = scriptText.match(new RegExp(`${k}\\s*=\\s*'([^']+)'`));
+            if (!m) throw new Error(`${k} not found`);
+            return m[1];
         };
-
-        // URL для создания аккаунта (подставится после fetchServerData)
-        this.urlCreateAccount = null;
-
-        // Параметры из ServerData
-        this.hpgid = null;
-        this.scid  = null;
-        this.uaid  = null;
-        this.uiflvr = null;
+        return {
+            txnId: extract('txnId'),
+            ticks: extract('ticks'),
+            rid:   extract('rid'),
+            authKey: extract('authKey'),
+            cid: extract('cid')
+        };
     }
 
-    // Получаем и парсим ServerData из HTML
-    async fetchServerData() {
-        const res = await axios.get('/?lic=1');
-        const match = res.data.match(/var ServerData\s*=\s*(\{[\s\S]*?\});/);
-        if (!match) {
-            throw new Error('ServerData не найден в HTML');
-        }
-
-        const serverData = JSON.parse(match[1]);
-
-        // Сохраняем нужные поля
-        this.urlCreateAccount = serverData.urlCreateAccount;
-        this.hpgid  = serverData.hpgid;
-        this.scid   = serverData.iScenarioId;
-        this.uaid   = serverData.sUnauthSessionID;
-        this.uiflvr = serverData.iUiFlavor;
-
-        return res.headers["set-cookie"][0].split("=")[1].split(";")[0]
+    async _clearFpt2({ txnId, ticks, rid, authKey, cid }) {
+        // Step 4: call fpt2.microsoft.com to finalize blob
+        await this.client.get(`https://fpt2.microsoft.com/Clear.HTML?ctx=Ls1.0&wl=False` +
+            `&session_id=${txnId}&id=${rid}&w=${ticks}&tkt=${authKey}&CustomerId=${cid}`, {
+            headers: { Referer: 'https://fpt.live.com' }
+        });
     }
 
-    /**
-     * Создать аккаунт Outlook
-     * @param {Object} info
-     * @param {string} info.birthDate   — формат "DD:MM:YYYY"
-     * @param {string} info.firstName
-     * @param {string} info.lastName
-     * @param {string} info.memberName  — логин с @outlook.com
-     * @param {string} info.password
-     * @param {string} info.country     — например, "IL"
-     */
-    async createAccount(info, amsc) {
-        // Если ещё не делали fetchServerData — сделаем
-        if (!this.urlCreateAccount) {
-            await this.fetchServerData();
-        }
+    async _checkAvailable({ email, uaid, hpgid, scid, uiflvr, apiCanary }) {
+        // Step 5: CheckAvailableSigninNames
+        const url = '/API/CheckAvailableSigninNames';
+        const payload = {
+            signInName: email,
+            uaid,
+            includeSuggestions: true,
+            uiflvr,
+            scid,
+            hpgid
+        };
+        const decodedCanary = decodeUrl(apiCanary);
+        const res = await this.client.post(url, payload, {
+            headers: {
+                'Accept': 'application/json',
+                'canary': decodedCanary,
+                'correlationId': uaid,
+                'hpgact': String(0),
+                'hpgid': String(hpgid),
+                'Origin': 'https://signup.live.com',
+                'Referer': `https://signup.live.com/signup?lic=1`,
+            }
+        });
+        return res.data;  // contains apiCanary, telemetryContext
+    }
 
-        axios.defaults.headers.common['Cookie'] = `amsc=${amsc}`
+    async _reportEvent({ uaid, scid, hpgid, telemetryContext, apiCanary }) {
+        // Step 6: ReportClientEvent
+        const url = '/API/ReportClientEvent?lic=1';
+        const ts = Date.now().toString();
+        const payload = {
+            pageApiId: hpgid + 1,
+            clientTelemetryData: {
+                category: 'PageView',
+                pageName: (hpgid + 1).toString(),
+                eventInfo: { timestamp: ts }
+            },
+            uiflvr: 1001,
+            uaid,
+            scid,
+            hpgid: hpgid + 1,
+            telemetryContext
+        };
+        const res = await this.client.post(url, payload, {
+            headers: {
+                'Accept': 'application/json',
+                'canary': apiCanary,
+                'tcxt': telemetryContext,
+                'x-ms-apiTransport': 'xhr',
+                'x-ms-apiVersion': '2',
+                'Referer': 'https://signup.live.com/?lic=1'
+            }
+        });
+        return res.data; // new apiCanary, telemetryContext
+    }
+
+    async _createAccount({ email, password, firstName, lastName, birthDate, country },
+                         { apiCanary, telemetryContext, uaid, scid, hpgid, sHipFid, SKI }) {
+        // Step 7: CreateAccount
+        const url = '/API/CreateAccount?lic=1';
+        const now = new Date().toISOString();
+        const encrypted = new encrypt(password, telemetryContext.randomNum, telemetryContext.key);
 
         const payload = {
-            BirthDate: info.birthDate,
-            CheckAvailStateMap: [`${info.memberName}:false`],
-            Country: info.country,
-            EvictionWarningShown: [],
-            FirstName: info.firstName,
-            IsRDM: false,
-            IsOptOutEmailDefault: true,
-            IsOptOutEmailShown: 1,
-            IsOptOutEmail: true,
-            IsUserConsentedToChinaPIPL: false,
-            LastName: info.lastName,
-            LW: 1,
-            MemberName: info.memberName,
-            RequestTimeStamp: new Date().toISOString(),
-            ReturnUrl: '',
-            SignupReturnUrl: '',
+            RequestTimeStamp: now,
+            MemberName: email,
+            CheckAvailStateMap: [`${email}:undefined`],
+            FirstName: firstName,
+            LastName: lastName,
+            BirthDate: birthDate,
+            Country: country,
             SuggestedAccountType: 'EASI',
-            SiteId: '',
-            VerificationCodeSlt: '',
-            PrivateAccessToken: '',
-            WReply: '',
-            MemberNameChangeCount: 1,
-            MemberNameAvailableCount: 1,
-            MemberNameUnavailableCount: 0,
-            Password: info.password,
-            uiflvr: this.uiflvr,
-            scid: this.scid,
-            uaid: this.uaid,
-            hpgid: this.hpgid
+            HWId: sHipFid,
+            SKI,
+            CipherValue: encrypted,
+            uaid, scid, hpgid: hpgid + 10
         };
 
-        const res = await axios.post(
-            `${this.urlCreateAccount}?lic=1`,
-            payload
-        );
+        const res = await this.client.post(url, payload, {
+            headers: {
+                'Accept': 'application/json',
+                'canary': apiCanary,
+                'tcxt': telemetryContext,
+                'x-ms-apiTransport': 'xhr',
+                'x-ms-apiVersion': '2',
+            }
+        });
         return res.data;
+    }
+
+    /** Public entry: does the whole flow */
+    async generateAccount({ firstName, lastName, birthDate, country = 'US' }) {
+        const password = this._randStr(16);
+        const email = `${this._randStr(10)}@outlook.com`;
+
+        // 2. uaid + flavor + canary + etc.
+        const sd = await this._getUaId();
+
+        // 3. FPT flow
+        const fpt = await this._fptFlow(sd.urlDfp);
+        await this._clearFpt2(fpt);
+
+        // 4. CheckAvailableSigninNames
+        const chk = await this._checkAvailable({
+            email, uaid: sd.sUnauthSessionID, hpgid: sd.hpgid, scid: sd.iScenarioId, uiflvr: sd.iUiFlavor,
+            apiCanary: sd.apiCanary
+        });
+
+        // 5. ReportClientEvent
+        const rpt = await this._reportEvent({
+            uaid: sd.sUnauthSessionID, scid: sd.iScenarioId, hpgid: sd.hpgid,
+            telemetryContext: chk.telemetryContext,
+            apiCanary: chk.apiCanary
+        });
+
+        // 6. CreateAccount
+        const result = await this._createAccount(
+            { email, password, firstName, lastName, birthDate, country },
+            {
+                apiCanary: rpt.apiCanary,
+                telemetryContext: rpt.telemetryContext,
+                uaid: sd.uaid,
+                scid: sd.iScenarioId,
+                hpgid: sd.hpgid,
+                sHipFid: sd.sHipFid,
+                SKI: sd.SKI
+            }
+        );
+
+        return { email, password, result };
     }
 }
