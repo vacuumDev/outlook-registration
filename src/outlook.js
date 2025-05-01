@@ -51,11 +51,8 @@ export default class OutlookGenerator {
         return href;
     }
 
-    async _getUaId() {
-        // Step 2: GET login.live.com → redirect back to signup.live.com with uaid
-        // The cookie jar will keep all cookies automatically.
-        // now fetch the real signup with lic=1
-        const res3 = await this.client.get(`/signup?lic=1`);
+    async _getUaId(uaid) {
+        const res3 = await this.client.get(`/signup?lic=1&uaid=${uaid}`);
         const html = res3.data;
         // extract apiCanary, sHipFid, SKI, hpgid, iUiFlavor, iScenarioId
         const fields = {};
@@ -66,6 +63,45 @@ export default class OutlookGenerator {
         }
         return fields;
     }
+
+    async extractUaidFromRedirect() {
+        try {
+            // Делаем HEAD или GET-запрос чтобы поймать редирект в заголовках
+            const res = await this.client.get('/signup', {
+                maxRedirects: 0, // Важно! чтобы axios не следовал за редиректом, а дал нам заголовки
+                validateStatus: (status) => status >= 200 && status < 400,
+                headers:  {
+                    'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+                    'accept-language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
+                    'cookie': 'MUID=36f272f098f142468459a8154295145d; mkt=ru-RU; MicrosoftApplicationsTelemetryDeviceId=a020b93c-1af5-4d96-997d-4d39fdc3f2dd; _pxvid=342864b4-142e-11f0-82f3-0b51e6e0494c; MSFPC=GUID=c0a8bc0bfa684186b0320dae85cfaf81&HASH=c0a8&LV=202502&V=4&LU=1739724773598; amsc=Fujws4Fe0IxaJn0grYQc33IlKkDoS6q6krNAq73UGLoYqPCPcO7/1y0QmfxvisCCuIuWJb3AwVw3MRDMIpVkTlmP9AV0cBHkc39qJqgU03xWyq1X0joosyeaaVZ3+IqaYGbVf38dFeSCoRJrDGdgB6KCeemGK0S/AAyNA4eK94sicxw7YPAoK2i00shIW6Jn9Q8AfyO2kfcGRi1sLpaFQJXXIXKQ1zM5k96mij1ENsnbJhaE2AwMiFE8gB6s5P9EpjU/uUlc8Fc+o68qwB+Y/DEDf44VEtqG2IlNyaalNZWF3Q0r+ZJzg3WtvAiCh+S4:2:3c; fptctx2=taBcrIH61PuCVH7eNCyH0AHEYHVht29NHm46S5qgUjaemqS3jYiRtM%252b32r7GgyQMKRHkXyLfZyqMGqk50NQ5OH0RhGXkYUJDZFa5MNMn1Z5CNYLU3f4NiGT39H7cM8yL4Nc7q9QNIuwtpEQSg%252fkPjCfgEvnEiFShNTkKHMNjCOTI2F4m8dE7S%252fRqntm19pAkhb51jLjkNvQI4Bvhs77hkTbyMoY%252fz2XaCmOlmtddfMteKxBJdfk%252bZoFS%252b2SNcJsKmurGOeqPIX7m4Dq6zYXRkPl1w9QT1F5%252f3yWf8ZuWIAU1u43FMlxRuCjy4iuzGHgGBOi5UJ6u4vOkUbUc%252bPHjjQ%253d%253d; ai_session=ZmdwqBYcNrG0HncT0ArUHn|1744357341050|1744358271442; _px3=676af8a59f90194f651554920cfb9c39e5c7d3091126cb931496dc1a575d36f9:09z1QlHfycgAc2hnN/+7AG2uMSUe3KiyyNPkuoA8ufx0fkoJP+FpZelBAuENPXB0rW7dOWguvyqB78eKcL5Ulg==:1000:LBsn9w+OTIyzY+amlZz7Zpjnv23ZiHe+b4q0zkNNXVRrdQSUrDO5GzEz8FKQpYrczmCZgU0hYvim8bggDjZePtEG+dC887BwGMkV8gO2l+lSNgUg6ngkeZC5rcvbHkG8+eBkSWYwD4aqnRFDG3+wKxcrHm9XJyvZEe+rSqiclcWt1Rf9WPF73Xsubn3SamlMIvnS6LKUWkhv/79WT+wYgy/aHssNbKK4yvek7wCfXOY=; _pxde=44adbd05045173fbd645e4d8ed30db93e18e7e6b46f5d953dcfd1caa47b2b814:eyJ0aW1lc3RhbXAiOjE3NDQzNTgyNzM1NjAsImZfa2IiOjAsImluY19pZCI6WyI1Y2FmZGUzMzBmNDgxYjY5MjU3M2QwNmNmMmU2OWY5NyJdfQ==',
+                    'priority': 'u=0, i',
+                    'sec-ch-ua': '"Google Chrome";v="135", "Not-A.Brand";v="8", "Chromium";v="135"',
+                    'sec-ch-ua-mobile': '?0',
+                    'sec-ch-ua-platform': '"macOS"',
+                    'sec-fetch-dest': 'document',
+                    'sec-fetch-mode': 'navigate',
+                    'sec-fetch-site': 'none',
+                    'sec-fetch-user': '?1',
+                    'upgrade-insecure-requests': '1',
+                    'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36'
+                }
+            });
+
+            const location = res.headers['location'];
+            if (!location) throw new Error('Redirect location not found in headers');
+
+            const url = new URL(location);
+            const uaid = url.searchParams.get('uaid');
+
+            if (!uaid) throw new Error('uaid parameter not found in redirect URL');
+
+            return uaid;
+        } catch (error) {
+            console.error('Failed to extract uaid from redirect:', error.message);
+            throw error;
+        }
+    }
+
 
     async _fptFlow(url) {
         // Step 3: call fpt.live.com → extract txnId, ticks, rid, authKey, cid
@@ -93,6 +129,59 @@ export default class OutlookGenerator {
             cid: extract('cid')
         };
     }
+    async evaluateExperimentAssignments({ correlationid, hpgid, canary }) {
+        try {
+            const url = '/API/EvaluateExperimentAssignments';
+            const payload = {
+                clientExperiments: [
+                    {
+                        parallax: 'addprivatebrowsingtexttofabricfooter',
+                        control: 'addprivatebrowsingtexttofabricfooter_control',
+                        treatments: ['addprivatebrowsingtexttofabricfooter_treatment']
+                    },
+                    {
+                        parallax: 'updateuseformsubmissionfocuslogic',
+                        control: 'updateuseformsubmissionfocuslogic_control',
+                        treatments: ['updateuseformsubmissionfocuslogic_treatment']
+                    },
+                    {
+                        parallax: 'loadgamepadnavigationmoduleloginfluent',
+                        control: 'loadgamepadnavigationmoduleloginfluent_control',
+                        treatments: ['loadgamepadnavigationmoduleloginfluent_treatment']
+                    }
+                ]
+            };
+
+            const res = await this.client.post(url, payload, {
+                headers: {
+                    'accept': 'application/json',
+                    'accept-language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
+                    'canary': canary,
+                    'client-request-id': correlationid,
+                    'content-type': 'application/json; charset=utf-8',
+                    'correlationid': correlationid,
+                    'hpgact': '0',
+                    'hpgid': String(hpgid),
+                    'origin': 'https://signup.live.com',
+                    'priority': 'u=1, i',
+                    'referer': `https://signup.live.com/signup?lic=1&uaid=${correlationid}`,
+                    'sec-ch-ua': '"Google Chrome";v="135", "Not-A.Brand";v="8", "Chromium";v="135"',
+                    'sec-ch-ua-mobile': '?0',
+                    'sec-ch-ua-platform': '"macOS"',
+                    'sec-fetch-dest': 'empty',
+                    'sec-fetch-mode': 'cors',
+                    'sec-fetch-site': 'same-origin',
+                    'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36'
+                }
+            });
+
+            return res.data;
+        } catch (error) {
+            console.error('Failed to evaluate experiment assignments:', error.message);
+            throw error;
+        }
+    }
+
 
     async _clearFpt2({ txnId, ticks, rid, authKey, cid }) {
         // Step 4: call fpt2.microsoft.com to finalize blob
@@ -113,7 +202,6 @@ export default class OutlookGenerator {
             scid,
             hpgid
         };
-        const decodedCanary = decodeUrl(apiCanary);
         const res = await this.client.post(url, payload, {
             headers: {
                 'Accept': 'application/json',
@@ -197,8 +285,18 @@ export default class OutlookGenerator {
         const password = this._randStr(16);
         const email = `${this._randStr(10)}@outlook.com`;
 
+        const uaid = await this.extractUaidFromRedirect();
+
         // 2. uaid + flavor + canary + etc.
-        const sd = await this._getUaId();
+        const sd = await this._getUaId(uaid);
+
+        sd.apiCanary = decodeUrl(sd.apiCanary)
+
+        const data = await this.evaluateExperimentAssignments({
+            correlationid:  uaid,
+            hpgid: sd.hpgid,
+            canary: sd.apiCanary
+        })
 
         // 3. FPT flow
         const fpt = await this._fptFlow(sd.urlDfp);
