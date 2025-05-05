@@ -1,11 +1,16 @@
+import 'dotenv/config';
 import axiosCookie from './axios-cookie.js';
 import puppeteer from 'puppeteer';
 import fs from 'fs';
+import Generator from "./generator.js";
+import config from "./config.js";
 
 let requestParams = '';
 async function delay(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
+
+let userData = Generator.generateFakeUserData();
 
 async function createAccount(uiflvr, scid, hpgid, uaid) {
     const requestTimeStamp = new Date().toISOString();
@@ -13,19 +18,19 @@ async function createAccount(uiflvr, scid, hpgid, uaid) {
     return axiosCookie.post(
         `https://signup.live.com/API/CreateAccount?${requestParams}`,
         {
-            BirthDate: "17:10:1999",
-            CheckAvailStateMap: ["jibtoxamil123@outlook.com:false"],
-            Country: "IL",
+            BirthDate: userData.birthDate,
+            CheckAvailStateMap: [`${userData.memberName}:false`],
+            Country: userData.country,
             EvictionWarningShown: [],
-            FirstName: "Abna-Diana",
+            FirstName: userData.firstName,
             IsRDM: false,
             IsOptOutEmailDefault: true,
             IsOptOutEmailShown: 1,
             IsOptOutEmail: true,
             IsUserConsentedToChinaPIPL: false,
-            LastName: "Peacocks",
+            LastName: userData.lastName,
             LW: 1,
-            MemberName: "jibtoxamil123@outlook.com",
+            MemberName: userData.memberName,
             RequestTimeStamp: requestTimeStamp,
             ReturnUrl: "",
             SignupReturnUrl: "",
@@ -37,7 +42,7 @@ async function createAccount(uiflvr, scid, hpgid, uaid) {
             MemberNameChangeCount: 1,
             MemberNameAvailableCount: 1,
             MemberNameUnavailableCount: 0,
-            Password: "vq2i!sZz",
+            Password: userData.password,
             uiflvr,
             scid,
             uaid,
@@ -67,7 +72,7 @@ async function checkAvailableSigninNames(uiflvr, scid, hpgid, uaid) {
         `https://signup.live.com/API/CheckAvailableSigninNames?${requestParams}`,
         {
             includeSuggestions: true,
-            signInName: 'jibtoxamil123@outlook.com',
+            signInName: userData.memberName,
             uiflvr,
             scid,
             uaid,
@@ -139,7 +144,6 @@ async function fetchFptLiveIframe(urlDfp) {
                 'sec-fetch-mode': 'navigate',
                 'accept-language': 'en-US',
                 Connection: 'keep-alive',
-                Cookie: 'amsc=JB10XspCqJnugcoQmSbRh+VLyse5sAmFC5UkdHS7Zuxf3gzDnYlXxyY1SU+jRQcVo1QdCARaIIBBGNjYYCB96RFc0EsTEL5UJAIopxIDoLbFo947cRarQDDdzj/90IeunbRd+CiKccioN2FQWE6fYqX1LYt38wAkhJWnxi4CF2JcsncbG/xCqSUIZ6IvhNjzFH0GDdA/+e8P1Z3zCSsaWoRI6AsPuTEmyHmT953EjwS7dJQGT/vQ4rSiYU0Pshl94F+050SK1eTAh2wR8l4ZhLNvv0ojPhZ8dBRNCqBaYvzCAwmSkhgr9BjMSXt5VvYf:2:3c; logonLatency=LGN01=638804896082439643',
                 'Accept-Encoding': 'gzip, deflate'
             }
         }
@@ -247,7 +251,7 @@ async function fetchOwaSignupPage() {
 }
 
 async function solveCaptcha(websiteURL, data) {
-    const clientKey = 'f3636acc25c04f5e9fec5ca5cad3a8db591719';
+    const clientKey = config.EZ_CAPTCHA_KEY;
     const appId = '80212';
     const websiteKey = 'B7D8911C-5CC8-A9A3-35B0-554ACEE604DA';
 
@@ -309,19 +313,19 @@ export async function createAccountCaptcha(
 
     // assemble the body
     const body = {
-        BirthDate: "17:10:1999",
-        CheckAvailStateMap: ['jibtoxamil123@outlook.com:false'],
-        Country: 'IL',
+        BirthDate: userData.birthDate,
+        CheckAvailStateMap: [`${userData.memberName}:false`],
+        Country: userData.country,
         EvictionWarningShown: [],
-        FirstName: 'Abna-Diana',
+        FirstName: userData.firstName,
         IsRDM: false,
         IsOptOutEmailDefault: true,
         IsOptOutEmailShown: 1,
         IsOptOutEmail: true,
         IsUserConsentedToChinaPIPL: false,
-        LastName: 'Peacocks',
+        LastName: userData.lastName,
         LW: 1,
-        MemberName: 'jibtoxamil123@outlook.com',
+        MemberName: userData.memberName,
         RequestTimeStamp: new Date().toISOString(),
         ReturnUrl: '',
         SignupReturnUrl: '',
@@ -332,7 +336,7 @@ export async function createAccountCaptcha(
         MemberNameChangeCount: 1,
         MemberNameAvailableCount: 1,
         MemberNameUnavailableCount: 0,
-        Password: 'vq2i!sZz',
+        Password: userData.password,
         RiskAssessmentDetails: riskAssessmentDetails,
         RepMapRequestIdentifierDetails: repMapRequestIdentifierDetails,
         HFId,
@@ -473,19 +477,6 @@ const main = async () => {
     await executeClearPage('file://' + path)
     await checkAvailableSigninNames(Number(serverData.iUiFlavor), Number(serverData.iScenarioId), serverData.hpgid, serverData.sUnauthSessionID);
     await signupWithCaptchaLoop(serverData, requestParams);
-//     const res = await createAccount(Number(serverData.iUiFlavor), Number(serverData.iScenarioId), serverData.hpgid, serverData.sUnauthSessionID)
-//     console.log(res)
-//
-//     const raw = res.data.error.data;
-//
-// // 2. JSON.parse it into an object
-//     const details = JSON.parse(raw);
-//
-//     const arkoseBlob = details.arkoseBlob;
-//     const captchaToken = await solveCaptcha('https://signup.live.com/API/CreateAccount?' + requestParams, arkoseBlob);
-//     console.log(captchaToken)
-//     const resp = await createAccountCaptcha(Number(serverData.iUiFlavor), Number(serverData.iScenarioId), serverData.hpgid, serverData.sUnauthSessionID, details.riskAssessmentDetails, details.repMapRequestIdentifierDetails, serverData.oCaptchaInfo.sHipFid, 'B7D8911C-5CC8-A9A3-35B0-554ACEE604DA', captchaToken, 'enforcement', captchaToken);
-//     console.log(resp)
 }
 
 

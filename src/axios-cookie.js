@@ -2,9 +2,15 @@ import axios from 'axios';
 import { CookieJar } from 'tough-cookie';
 import { wrapper } from 'axios-cookiejar-support';
 import {HttpsProxyAgent} from "https-proxy-agent";
+import {HttpProxyAgent} from "http-proxy-agent";
+import config from "./config.js";
+import {getValidProxy} from "./helper.js";
 
 // 1) create your cookie jar
 const cookieJar = new CookieJar();
+
+const proxyUrl = await getValidProxy();
+const proxy = new HttpProxyAgent(proxyUrl);
 
 // 2) wrap axios (adds jar support)
 const axiosCookie = wrapper(axios.create({
@@ -12,11 +18,11 @@ const axiosCookie = wrapper(axios.create({
     withCredentials: true,
     proxy: {
         protocol: 'http',
-        host: 'gate.nodemaven.com',
-        port: 8080,
+        host: proxy.proxy.hostname,
+        port: proxy.proxy.port,
         auth: {
-            username: 'maddnivan_gmail_com-country-il-sid-1111111111114-filter-medium',
-            password: 'hy9o97m71v'
+            username: proxy.proxy.username,
+            password: proxy.proxy.password
         }
     }
 }));
