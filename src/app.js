@@ -6,6 +6,7 @@ import Generator from "./generator.js";
 import config from "./config.js";
 import {getRandomElement} from "./helper.js";
 import axios from "axios";
+import FileHandler from "./file-handler.js";
 
 
 let requestParams = '';
@@ -457,6 +458,39 @@ async function signupWithCaptchaLoop(serverData, requestParams) {
     }
 }
 
+async function postPPSecure(url, slt) {
+
+    // your form-body exactly as captured
+    const body =
+        `slt=${slt}`;
+
+    const res = await axiosCookie.post(
+        url,
+        body,
+        {
+            headers: {
+                'Host': 'login.live.com',
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:138.0) Gecko/20100101 Firefox/138.0',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'ru-RU,ru;q=0.8,en-US;q=0.5,en;q=0.3',
+                'Accept-Encoding': 'gzip, deflate, br, zstd',
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'Origin': 'https://signup.live.com',
+                'Referer': 'https://signup.live.com/',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1',
+                'Sec-Fetch-Dest': 'document',
+                'Sec-Fetch-Mode': 'navigate',
+                'Sec-Fetch-Site': 'same-site',
+                'Priority': 'u=0, i=0',
+            }
+        }
+    );
+
+    console.log(res.data)
+
+    return res;
+}
 
 
 const main = async () => {
@@ -484,7 +518,8 @@ const main = async () => {
     await executeClearPage('file://' + path)
     await checkAvailableSigninNames(Number(serverData.iUiFlavor), Number(serverData.iScenarioId), serverData.hpgid, serverData.sUnauthSessionID);
     const account = await signupWithCaptchaLoop(serverData, requestParams);
-    await axiosCookie.get(account.redirectUrl);
+    await postPPSecure(account.redirectUrl, account.slt)
+    await FileHandler.appendToFile('data/accounts.txt', userData)
 }
 
 

@@ -137,3 +137,6 @@ dist
 .idea
 index.html
 HTTPDebuggerSession.xml
+
+.DS_Store
+data/accounts.txt
