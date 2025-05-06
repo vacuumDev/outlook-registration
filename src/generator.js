@@ -1,7 +1,7 @@
 import { faker } from '@faker-js/faker';
 
 export default class Generator {
-    static generateFakeUserData() {
+    static generateFakeUserData(country) {
         const firstName = faker.name.firstName();
         const lastName  = faker.name.lastName();
 
@@ -20,8 +20,6 @@ export default class Generator {
         // Надёжный пароль: длина 12, минимум одна буква верхнего/нижнего регистра, цифра и спецсимвол
         const password = faker.internet.password(12, false, /[A-Za-z0-9]/);
 
-        // Случайная страна (двухбуквенный код)
-        const country = faker.address.countryCode('alpha-2');
 
         return { birthDate, firstName, lastName, memberName, password, country };
     }

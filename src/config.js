@@ -9,8 +9,6 @@ const env = cleanEnv(process.env, {
 });
 
 
-const countries = env.COUNTRIES.split(',');
-
 const config = {
     ...env,
     COUNTRIES: env.COUNTRIES.split(','),

@@ -22,9 +22,8 @@ export function generateRandom12Hex() {
     return hex;
 }
 
-export async function getValidProxy() {
+export async function getValidProxy(country) {
     let attempts = 0;
-    let country = getRandomElement(config.COUNTRIES);
 
     while (attempts < 40) {
         attempts++;
