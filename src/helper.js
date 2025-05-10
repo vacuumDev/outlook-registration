@@ -42,7 +42,7 @@ export async function getValidProxy(country) {
             return proxyUrl;
         } catch (error) {
             console.log(`Прокси ${proxyUrl} невалидна, пытаемся снова... (${attempts})`);
-            await delay(getRandomInterval(minDelay, maxDelay));
+            await delay(100);
         }
     }
     // Если не нашли валидный прокси

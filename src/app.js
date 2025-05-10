@@ -8,6 +8,46 @@ import {getRandomElement} from "./helper.js";
 import axios from "axios";
 import FileHandler from "./file-handler.js";
 
+import qs from "querystring";
+import * as cheerio from "cheerio";
+
+export async function makeUrlPostRequest(html) {
+    // 1️⃣ extract via regex
+    const urlPostMatch  = html.match(/urlPost:'([^']+)'/);
+    const sFTNameMatch  = html.match(/sFTName:'([^']+)'/);
+    const sFTValueMatch = html.match(/sFT:'([^']+)'/);
+
+    if (!urlPostMatch || !sFTNameMatch || !sFTValueMatch) {
+        throw new Error('Could not find urlPost, sFTName or sFT in HTML');
+    }
+
+    const urlPost  = urlPostMatch[1];
+    const sFTName  = sFTNameMatch[1];
+    const sFTValue = sFTValueMatch[1];
+
+    // 2️⃣ build the form-body
+    const body = qs.stringify({ [sFTName]: sFTValue });
+
+    // 3️⃣ fire the POST
+    const res = await axiosCookie.post(
+        urlPost,
+        body,
+        {
+            headers: {
+                Host: 'login.live.com',
+                'Content-Type': 'application/x-www-form-urlencoded',
+                Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                Referer: 'https://login.live.com/ppsecure/post.srf',
+                Origin: 'https://login.live.com',
+                'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.4 Mobile/15E148 Safari/604.1'
+            }
+        }
+    );
+
+    console.log(res.data)
+    return res;
+}
+
 
 let requestParams = '';
 async function delay(ms) {
@@ -492,6 +532,42 @@ async function postPPSecure(url, slt) {
     return res;
 }
 
+export async function followPPSecureRedirect(res) {
+
+    // 2. load the HTML and pull out the form
+    const $ = cheerio.load(res.data);
+    const form = $('form[name=fmHF]');
+    if (!form.length) {
+        throw new Error('Could not find auto-submit form in response HTML');
+    }
+
+    // 3. get action URL and all inputs
+    const action = form.attr('action');
+    const formData = {};
+    form.find('input').each((_, input) => {
+        const name = $(input).attr('name');
+        const value = $(input).attr('value') || '';
+        if (name) formData[name] = value;
+    });
+
+    // 4. re-post as x-www-form-urlencoded
+    const body = qs.stringify(formData);
+    const followRes = await axiosCookie.post(
+        action,
+        body,
+        {
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            }
+        }
+    );
+
+    console.log(followRes.data)
+
+    return followRes;
+}
+
+
 
 const main = async () => {
 
@@ -518,7 +594,11 @@ const main = async () => {
     await executeClearPage('file://' + path)
     await checkAvailableSigninNames(Number(serverData.iUiFlavor), Number(serverData.iScenarioId), serverData.hpgid, serverData.sUnauthSessionID);
     const account = await signupWithCaptchaLoop(serverData, requestParams);
-    await postPPSecure(account.redirectUrl, account.slt)
+    const res = await postPPSecure(account.redirectUrl, account.slt);
+
+    const followRes = await followPPSecureRedirect(res);
+    const final = await makeUrlPostRequest(res.data);
+    console.log('final status →', final.status);
     await FileHandler.appendToFile('data/accounts.txt', userData)
 }
 
